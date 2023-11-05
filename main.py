@@ -6,13 +6,15 @@ location_counter = -1
 
 instruct_list = []
 symbol_table = {} # 'sym': addr
-register_number = {'A': 0, 'X': 1, 'L': 2, 'B': 3, 'S': 4, 'T': 5, 'F': 6}
+register_number = {'A': 0x0, 'X': 0x1, 'L': 0x2, 'B': 0x3, 'S': 0x4, 'T': 0x5, 'F': 0x6}
 
 mnemonic_info = {
-    "STL": {"format":3, "opcode":0x80 },
+    "STL": {"format":3, "opcode":0x14 },
     "STA": {"format":3, "opcode":0x0C },
     "LDB": {"format":3, "opcode":0x68 },
     "LDT": {"format":3, "opcode":0x74 },
+    "LDL": {"format":3, "opcode":0x08 },
+    "LDX": {"format":3, "opcode":0x04 },
     "JSUB": {"format":3, "opcode":0x48 },
     "LDA": {"format":3, "opcode":0x00 },
     "COMP": {"format":3, "opcode":0x28 },
@@ -23,6 +25,7 @@ mnemonic_info = {
     "RD": {"format":3, "opcode":0xD8 },
     "COMPR": {"format":2, "opcode":0xA0 },
     "STCH": {"format":3, "opcode":0x54 },
+    "TIX": {"format":3, "opcode":0x2C },
     "TIXR": {"format":2, "opcode":0xB8 },
     "JLT": {"format":3, "opcode":0x38 },
     "STX": {"format":3, "opcode":0x10 },
@@ -55,6 +58,20 @@ def construct_instruct(instruct):
     instruct_list.append(instruct_info)
     return
 
+def hex_to_twos_complement(hex_string, num_bits):
+    # Convert hexadecimal to binary
+    binary_string = bin(int(hex_string, 16))[3:]
+    #print(binary_string)
+    # Pad with leading zeros if necessary
+    binary_string = binary_string.zfill(num_bits)
+    #print(binary_string)
+    # Invert the bits
+    inverted_string = ''.join('1' if bit == '0' else '0' for bit in binary_string)
+    #print(inverted_string)
+    # Add 1 to get the two's complement
+    twos_complement = bin(int(inverted_string, 2) + 1)[2:]
+    #print(twos_complement.zfill(num_bits))
+    return twos_complement.zfill(num_bits)
 
 def make_symbol_table():
     # decide the program name and also length
@@ -72,7 +89,7 @@ def make_symbol_table():
         # Assemble directives
         if instruct['mne'] == "START":
             p_name = instruct['sym']
-            location_counter = int(instruct['oper'])
+            location_counter = int(instruct['oper'], 16)
             start_location = location_counter
             instruct['loc'] = hex(location_counter)
         elif instruct['mne'] == "BASE":
@@ -85,7 +102,9 @@ def make_symbol_table():
                 location_counter += int(len(operand[2:-1])/2)
             elif operand[0] == 'C':
                 location_counter += len(operand[2:-1])
-
+        elif instruct['mne'] == "WORD":
+            symbol_table[instruct['sym']] = hex(location_counter)
+            location_counter += 3
         elif instruct['mne'] == "RESW":
             symbol_table[instruct['sym']] = hex(location_counter)
             location_counter += int(instruct['oper']) * 3
@@ -136,7 +155,10 @@ def print_symbol_table():
         
         print(f'Symbol: {symbol}, Address: {int(address, 16):04X}')
       
-
+def print_instruct_list():
+    global instruct_list
+    for instruct in instruct_list:
+        print(instruct)
 def read_file(fname):        
     with open(fname, 'r') as file:
         for l in file:
@@ -152,13 +174,211 @@ def pass_one():
     program_info = make_symbol_table()
     return program_info
 
+def generate_object_code(opcode, base, pc, instruction):
+    ## construct object code for format 3, 4 instruction
+    global symbol_table
+    #print(instruction)
+    mne = instruction['mne']
+    oper = instruction['oper']
+    objCode = -1
+    nixbpe = 0b0
+    
+    # decide n i
+    if '@' in oper:
+        # (n, i) = (1, 0)
+        nixbpe = nixbpe | (0b10 << 4)
+    elif '#' in oper:
+        # (n, i) = (0, 1)
+        nixbpe = nixbpe | (0b01 << 4)
+    else:
+        # (n, i) = (1, 1)
+        nixbpe = nixbpe | (0b11 << 4)
+
+    # format = 4
+    if '+' in mne:
+        m_record = {}
+        # +STCH BUFFER,X
+        if ',' in oper:
+            pass
+        elif '#' in oper:
+            symbol = oper[1:]
+            nixbpe = nixbpe | (0b0001)
+            if symbol.isalpha():
+                symbol_loc = symbol_table[symbol]
+                objCode = (opcode << 24) | (nixbpe << 20) | int(symbol_loc, 16)
+            else:
+                # Number
+                number = hex(int(symbol))
+                #print(type(number))
+                
+                objCode = (opcode << 24) | (nixbpe << 20) | int(number, 16)
+            print(mne, oper, hex(objCode))
+        else:
+            # x, b, p, e = 0001
+            nixbpe = nixbpe | (0b0001)
+            symbol_loc = symbol_table[oper]
+            objCode = (opcode << 24) | (nixbpe << 20) | int(symbol_loc, 16)
+            #print(mne, oper, hex(objCode))
+
+            # M record? 
+            m_record = {"loc": hex(int(instruction['loc'], 16) + 0x1), "length": 5}
+            #print(instruction)
+            #print(m_record)
+        objCode_format = f'{int(hex(objCode), 16):08X}'
+        #print(objCode_format, "  here")
+        print(instruction)
+        print(objCode_format)
+        return objCode_format, m_record
+    # format = 3
+    else:
+        if ',' in oper:
+            pass
+        elif '#' in oper:
+            if oper[1:].isalpha():
+                # get rid of # if operand is #label
+                oper = oper[1:]
+
+                # check pc relative or base relative
+                # pc -2048 - 2047
+                # base 0 - 4095
+                target_address = int(symbol_table[oper], 16)
+                relative = target_address - pc
+                if relative >= -2048 and relative < 2047:
+                    # (x, b, p, e) = (0, 0, 1, 0)
+                    nixbpe = nixbpe | (0b0010)
+                else:
+                    # base relative
+                    # (x, b, p, e) = (0, 1, 0, 0)
+                    nixbpe = nixbpe | (0b0100)
+                objCode = (opcode << 16) | (nixbpe << 12) | int(hex(relative), 16)
+            else:
+                # number
+                
+                number = hex(int(oper[1:]))
+                objCode = (opcode << 16) | (nixbpe << 12) | int(number, 16)
+                #print(mne, oper, hex(objCode))
+        else:
+            symbol = oper
+            if '@' in oper:
+                symbol = symbol[1:]
+            
+            # check pc relative or base relative
+            # pc -2048 - 2047
+            # base 0 - 4095
+            target_address = int(symbol_table[symbol], 16)
+            relative = target_address - pc
+            if relative >= -2048 and relative < 2047:
+                # (x, b, p, e) = (0, 0, 1, 0)
+                nixbpe = nixbpe | (0b0010)
+
+                if relative < 0:
+                    # convert to two's compliment
+                    #print(relative)
+                    relative = int(hex_to_twos_complement(hex(relative), 12), 2)
+                    
+
+            else:
+                # base relative
+                # (x, b, p, e) = (0, 1, 0, 0)
+                nixbpe = nixbpe | (0b0100)
+                relative = target_address - int(base, 16)
+
+            objCode = (opcode << 16) | (nixbpe << 12) | int(hex(relative), 16)
+
+        objCode_format = f'{int(hex(objCode), 16):06X}'
+    print(instruction)
+    print(objCode_format)
+    return objCode_format
+
+    
 def pass_two():
     # T_record = [{}, {}] for each dict = {"start_loc": , "length":, "record": []}
     # M_record = [{}, {}] for each dict = {"start_loc":, "length":}
-    global instruct_list, symbol_table
+    global instruct_list, symbol_table, mnemonic_info
+    T_record, M_record = list(), list()
+    t_record = dict()
+    objCode = -1
+    base = 0
+    pc = 0
+    for index, instruct in enumerate(instruct_list):
+        # Check 
+        #     assemble directive ?
+        #     instruction ?
+        #         format 1, 2 => obj code
+        #         format 3, 4:
+        #             LDB needs to set BASE register
+        #             - + format 4 e =1
+        #             - else format 3
+        #                 - @ indirect (n, i) = (1, 0)
+        #                 - # direct (n, i) = (0, 1)
+        #                     #num (x, b, p) = (0, 0, 0)
+        #                     #label pc or base relative
+        #                 - operand no @, # (n, i) = (1, 1)
+        #             operand consist of X ?
+        #             pc, base relative ?
+        # Set program counter
+        if (index + 1) != len(instruct_list):
+            pc = int(instruct_list[index+1]['loc'], 16)
+        # Assemble directives
+        
+        if instruct['mne'] == "START":
+            continue
+        elif instruct['mne'] == "BASE":
+            base = symbol_table[instruct['oper']]
+        elif instruct['mne'] == "BYTE":
+            # if operand[0] == 'X':
+            #     location_counter += int(len(operand[2:-1])/2)
+            # elif operand[0] == 'C':
+            #     location_counter += len(operand[2:-1])
+            pass
+        elif instruct['mne'] == "WORD":
+           pass
+        elif instruct['mne'] == "RESW":
+           pass
+        elif instruct['mne'] == "RESB":
+           pass
+        elif instruct['mne'] == "END":
+           pass
+        elif instruct['mne'] == 'RSUB':
+            objCode = 0x4F0000
+        else:
+            # instruction
+            mne = instruct['mne']
+                
+            if '+' in mne:
+                format = 4
+                opcode = mnemonic_info[mne[1:]]['opcode']
+            else:
+                format = mnemonic_info[mne]['format']
+                opcode = mnemonic_info[mne]['opcode']
 
-    for instruct in instruct_list:
-        pass
+            if format == 1:
+                pass
+            elif format == 2:
+                oper = instruct['oper']
+                if len(oper) == 1:
+                    # CLEAR X
+                    reg_num = register_number[oper]
+                    objCode = (opcode << 8) | (reg_num << 4)
+                    
+                    #print(hex(objCode))
+                    continue
+                # COMPR A,X
+                reg1, reg2 = oper.split(',')
+                reg_num1 = register_number[reg1]
+                reg_num2 = register_number[reg2]
+                objCode = (opcode << 8) | (reg_num1 << 4) | reg_num2
+
+                #print(mne, oper, hex(objCode))
+
+
+            elif format == 3:
+                objCode = generate_object_code(opcode, base, pc, instruct_list[index])
+            elif format == 4:
+                objCode, M_record = generate_object_code(opcode, base, pc, instruct_list[index])
+                
+
+
     pass
 # Not 
 #print_symbol_table()
@@ -166,5 +386,5 @@ def pass_two():
 read_file(fname)
 program_info = pass_one()
 pass_two()
-print(instruct_list)
-print_symbol_table()
+print_instruct_list()
+#print_symbol_table()
