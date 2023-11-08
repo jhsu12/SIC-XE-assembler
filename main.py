@@ -199,7 +199,10 @@ def generate_object_code(opcode, base, pc, instruction):
         m_record = {}
         # +STCH BUFFER,X
         if ',' in oper:
-            pass
+            symbol = oper.split(",")[0]
+            nixbpe = nixbpe | (0b1001)
+            symbol_loc = symbol_table[symbol]
+            objCode = (opcode << 24) | (nixbpe << 20) | int(symbol_loc, 16)
         elif '#' in oper:
             symbol = oper[1:]
             nixbpe = nixbpe | (0b0001)
@@ -212,7 +215,7 @@ def generate_object_code(opcode, base, pc, instruction):
                 #print(type(number))
                 
                 objCode = (opcode << 24) | (nixbpe << 20) | int(number, 16)
-            print(mne, oper, hex(objCode))
+            #print(mne, oper, hex(objCode))
         else:
             # x, b, p, e = 0001
             nixbpe = nixbpe | (0b0001)
@@ -226,14 +229,12 @@ def generate_object_code(opcode, base, pc, instruction):
             #print(m_record)
         objCode_format = f'{int(hex(objCode), 16):08X}'
         #print(objCode_format, "  here")
-        print(instruction)
-        print(objCode_format)
+        # print(instruction)
+        # print(objCode_format)
         return objCode_format, m_record
     # format = 3
     else:
-        if ',' in oper:
-            pass
-        elif '#' in oper:
+        if '#' in oper:
             if oper[1:].isalpha():
                 # get rid of # if operand is #label
                 oper = oper[1:]
@@ -258,6 +259,11 @@ def generate_object_code(opcode, base, pc, instruction):
                 objCode = (opcode << 16) | (nixbpe << 12) | int(number, 16)
                 #print(mne, oper, hex(objCode))
         else:
+            # setting x bit ?
+            x_index = False
+            if ',' in oper:
+                oper = oper.split(",")[0]
+                x_index = True
             symbol = oper
             if '@' in oper:
                 symbol = symbol[1:]
@@ -270,7 +276,6 @@ def generate_object_code(opcode, base, pc, instruction):
             if relative >= -2048 and relative < 2047:
                 # (x, b, p, e) = (0, 0, 1, 0)
                 nixbpe = nixbpe | (0b0010)
-
                 if relative < 0:
                     # convert to two's compliment
                     #print(relative)
@@ -279,15 +284,19 @@ def generate_object_code(opcode, base, pc, instruction):
 
             else:
                 # base relative
-                # (x, b, p, e) = (0, 1, 0, 0)
+                # default (x, b, p, e) = (0, 1, 0, 0)
                 nixbpe = nixbpe | (0b0100)
+                
+                # using X index, setting x bit to 1
+                if x_index:
+                    nixbpe = nixbpe | (0b1000)
                 relative = target_address - int(base, 16)
 
             objCode = (opcode << 16) | (nixbpe << 12) | int(hex(relative), 16)
 
         objCode_format = f'{int(hex(objCode), 16):06X}'
-    print(instruction)
-    print(objCode_format)
+    # print(instruction)
+    # print(objCode_format)
     return objCode_format
 
     
@@ -316,31 +325,43 @@ def pass_two():
         #                 - operand no @, # (n, i) = (1, 1)
         #             operand consist of X ?
         #             pc, base relative ?
+
+
         # Set program counter
         if (index + 1) != len(instruct_list):
             pc = int(instruct_list[index+1]['loc'], 16)
         # Assemble directives
-        
         if instruct['mne'] == "START":
             continue
         elif instruct['mne'] == "BASE":
             base = symbol_table[instruct['oper']]
+            continue
         elif instruct['mne'] == "BYTE":
-            # if operand[0] == 'X':
-            #     location_counter += int(len(operand[2:-1])/2)
-            # elif operand[0] == 'C':
-            #     location_counter += len(operand[2:-1])
-            pass
+            operand = instruct['oper']
+            val = operand[2:-1]
+            if operand[0] == 'X':
+               objCode = f'{val}'
+            elif operand[0] == 'C':
+                #print(val)
+                objCode = ''.join([f'{ord(char):x}' for char in val])
+            #print(objCode)
         elif instruct['mne'] == "WORD":
-           pass
-        elif instruct['mne'] == "RESW":
-           pass
-        elif instruct['mne'] == "RESB":
-           pass
-        elif instruct['mne'] == "END":
-           pass
+           continue
+        elif instruct['mne'] == "RESW" or instruct['mne'] == "RESB" or instruct['mne'] == "END":
+            # if t_record isn't empty then append
+            if len(t_record) != 0:
+                # append old t_record to T_record
+                new_t = t_record.copy()
+                T_record.append(new_t)
+                # print("\n\n T_RECORD")
+                # print(T_record)
+                # print("\n\n")
+                # clear old t_record
+                t_record.clear()
+            continue
+           
         elif instruct['mne'] == 'RSUB':
-            objCode = 0x4F0000
+            objCode = "4F0000"
         else:
             # instruction
             mne = instruct['mne']
@@ -354,37 +375,73 @@ def pass_two():
 
             if format == 1:
                 pass
+                continue
             elif format == 2:
                 oper = instruct['oper']
                 if len(oper) == 1:
                     # CLEAR X
                     reg_num = register_number[oper]
                     objCode = (opcode << 8) | (reg_num << 4)
-                    
                     #print(hex(objCode))
-                    continue
-                # COMPR A,X
-                reg1, reg2 = oper.split(',')
-                reg_num1 = register_number[reg1]
-                reg_num2 = register_number[reg2]
-                objCode = (opcode << 8) | (reg_num1 << 4) | reg_num2
-
+                else:
+                    # COMPR A,X
+                    reg1, reg2 = oper.split(',')
+                    reg_num1 = register_number[reg1]
+                    reg_num2 = register_number[reg2]
+                    objCode = (opcode << 8) | (reg_num1 << 4) | reg_num2
+                objCode = f'{int(hex(objCode), 16):04X}'
                 #print(mne, oper, hex(objCode))
 
 
             elif format == 3:
                 objCode = generate_object_code(opcode, base, pc, instruct_list[index])
             elif format == 4:
-                objCode, M_record = generate_object_code(opcode, base, pc, instruct_list[index])
-                
+                objCode, m_record = generate_object_code(opcode, base, pc, instruct_list[index])
+                # append m_record
+                M_record.append(m_record)
 
+        # initialize t_record
+        if 'start_loc' not in t_record:
+            t_record['start_loc'] = instruct['loc']
+            t_record['length'] = 0
+            t_record['result'] = []
+        
+        objCode_length = len(objCode)/2
 
+        # check length
+        if t_record['length'] + objCode_length > 0xFF:
+            # append old t_record to T_record
+            new_t = t_record.copy()
+            T_record.append(new_t)
+
+            # create new t_record
+            t_record.clear()
+            t_record['start_loc'] = instruct['loc']
+            t_record['length'] = 0
+            t_record['result'] = []
+            
+        t_record['length'] += objCode_length
+        t_record['result'].append(objCode)
+        #print(instruct, t_record)
+        # if len(T_record) != 0:
+        #     print(len(T_record))
+        #print(instruct, T_record)
+    return T_record, M_record
+
+def print_object_program(program_info, T_record, M_record):
     pass
-# Not 
-#print_symbol_table()
 
 read_file(fname)
+
+# Pass One
 program_info = pass_one()
-pass_two()
-print_instruct_list()
-#print_symbol_table()
+print("Symbol Table:\n\n")
+print_symbol_table()
+
+# Pass Two
+T_record, M_record = pass_two()
+print_object_program(program_info, T_record, M_record)
+#print(program_info)
+
+#print(M_record)
+#print_instruct_list()
