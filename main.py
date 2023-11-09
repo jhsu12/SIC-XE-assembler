@@ -151,6 +151,7 @@ def make_symbol_table():
 
 
 def print_symbol_table():
+    print("Symbol Table:\n\n")
     global symbol_table
     sorted_symbol_table = dict(sorted(symbol_table.items(), key=lambda item: int(item[1], 16)))
 
@@ -451,13 +452,9 @@ read_file(fname)
 
 # Pass One
 program_info = pass_one()
-print("Symbol Table:\n\n")
 print_symbol_table()
 
 # Pass Two
 T_record, M_record = pass_two()
 print_object_program(program_info, T_record, M_record)
-#print(program_info)
 
-#print(M_record)
-#print_instruct_list()
