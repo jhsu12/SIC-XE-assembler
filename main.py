@@ -113,7 +113,7 @@ def make_symbol_table():
             location_counter += int(instruct['oper'])
         elif instruct['mne'] == "END":
             # Calculate length
-            p_length = hex(location_counter-start_location)
+            p_length = f'{int(hex(location_counter-start_location), 16):06X}'
         else:
         # Opcode
             # check synbol
@@ -143,7 +143,10 @@ def make_symbol_table():
                 location_counter += 4
             else:
                 location_counter += mnemonic_info[instruct['mne']]['format']
-    program_info = {"program_name": p_name, "program_length": p_length, "start_loc": hex(start_location)}
+    if len(p_name) != 6:
+        space = 6-len(p_name)
+        p_name += " " * space
+    program_info = {"program_name": p_name, "program_length": p_length, "start_loc": f'{int(hex(start_location), 16):06X}'}
     return program_info
 
 
@@ -224,7 +227,7 @@ def generate_object_code(opcode, base, pc, instruction):
             #print(mne, oper, hex(objCode))
 
             # M record? 
-            m_record = {"loc": hex(int(instruction['loc'], 16) + 0x1), "length": 5}
+            m_record = {"start_loc": f"{(int(instruction['loc'], 16) + 0x1):06X}", "length": "05"}
             #print(instruction)
             #print(m_record)
         objCode_format = f'{int(hex(objCode), 16):08X}'
@@ -351,6 +354,7 @@ def pass_two():
             # if t_record isn't empty then append
             if len(t_record) != 0:
                 # append old t_record to T_record
+                t_record['length'] = f"{int(hex(int(t_record['length'])), 16):02X}"
                 new_t = t_record.copy()
                 T_record.append(new_t)
                 # print("\n\n T_RECORD")
@@ -397,12 +401,13 @@ def pass_two():
                 objCode = generate_object_code(opcode, base, pc, instruct_list[index])
             elif format == 4:
                 objCode, m_record = generate_object_code(opcode, base, pc, instruct_list[index])
-                # append m_record
-                M_record.append(m_record)
+                if len(m_record) !=0:
+                    # append m_record
+                    M_record.append(m_record)
 
         # initialize t_record
         if 'start_loc' not in t_record:
-            t_record['start_loc'] = instruct['loc']
+            t_record['start_loc'] = f"{int(instruct['loc'], 16):06X}"
             t_record['length'] = 0
             t_record['result'] = []
         
@@ -416,7 +421,7 @@ def pass_two():
 
             # create new t_record
             t_record.clear()
-            t_record['start_loc'] = instruct['loc']
+            t_record['start_loc'] = f"{int(instruct['loc'], 16):06X}"
             t_record['length'] = 0
             t_record['result'] = []
             
@@ -429,8 +434,19 @@ def pass_two():
     return T_record, M_record
 
 def print_object_program(program_info, T_record, M_record):
-    pass
+    print("\nObject Program: \n\n")
 
+    print("H", program_info['program_name'], program_info['start_loc'], program_info['program_length'])
+
+    for t_rec in T_record:
+        print("T",t_rec['start_loc'], t_rec['length'], end=" ")
+        for obj in t_rec['result']:
+            print(obj, end=" ")
+        print("")
+    for m_rec in M_record:
+        print("M", m_rec['start_loc'], m_rec['length'], end=" ")
+        print("")
+    print("E", program_info['start_loc'])
 read_file(fname)
 
 # Pass One
