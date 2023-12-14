@@ -1,6 +1,18 @@
+import sys
+# python3 main.py 2-5.txt
+# The first element in sys.argv is the script name itself
+script_name = sys.argv[0]
+
+# Check if at least one argument is provided
+if len(sys.argv) < 2:
+    print(f"Usage: {script_name} <argument>")
+    sys.exit(1)
+
+# The actual argument is in sys.argv[1]
+fname = sys.argv[1]
 
 
-fname="2-5.txt"
+
 # means have not start yet
 location_counter = -1
 
@@ -13,8 +25,8 @@ mnemonic_info = {
     "STA": {"format":3, "opcode":0x0C },
     "LDB": {"format":3, "opcode":0x68 },
     "LDT": {"format":3, "opcode":0x74 },
-    "LDL": {"format":3, "opcode":0x08 },
-    "LDX": {"format":3, "opcode":0x04 },
+    #"LDL": {"format":3, "opcode":0x08 },
+    #"LDX": {"format":3, "opcode":0x04 },
     "JSUB": {"format":3, "opcode":0x48 },
     "LDA": {"format":3, "opcode":0x00 },
     "COMP": {"format":3, "opcode":0x28 },
@@ -25,7 +37,7 @@ mnemonic_info = {
     "RD": {"format":3, "opcode":0xD8 },
     "COMPR": {"format":2, "opcode":0xA0 },
     "STCH": {"format":3, "opcode":0x54 },
-    "TIX": {"format":3, "opcode":0x2C },
+    #"TIX": {"format":3, "opcode":0x2C },
     "TIXR": {"format":2, "opcode":0xB8 },
     "JLT": {"format":3, "opcode":0x38 },
     "STX": {"format":3, "opcode":0x10 },
@@ -448,13 +460,33 @@ def print_object_program(program_info, T_record, M_record):
         print("M", m_rec['start_loc'], m_rec['length'], end=" ")
         print("")
     print("E", program_info['start_loc'])
+
+def writeOBJ_to_file(program_info, T_record, M_record):
+    with open('output.txt', 'w') as file:
+        file.write("H " + program_info['program_name'] + " " +  program_info['start_loc'] + " " + program_info['program_length'] + '\n')
+
+        for t_rec in T_record:
+            file.write("T " + t_rec['start_loc'] + " " + t_rec['length'] +" ")
+            for obj in t_rec['result']:
+                file.write(obj + " ")
+            file.write('\n')
+        for m_rec in M_record:
+            file.write("M " + m_rec['start_loc'] + " " + m_rec['length'] + '\n')
+            
+        file.write("E " + program_info['start_loc'])
+
 read_file(fname)
 
 # Pass One
 program_info = pass_one()
 print_symbol_table()
 
+print()
+for i in instruct_list:
+    print(i)
+
 # Pass Two
 T_record, M_record = pass_two()
 print_object_program(program_info, T_record, M_record)
+writeOBJ_to_file(program_info, T_record, M_record)
 
